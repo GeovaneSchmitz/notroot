@@ -31,6 +31,23 @@ if [ $# -lt 2 ]; then
     exit 1
 fi
 
+fix_script () {
+    sed -i '/db_version/d' $1
+    sed -i '/\/usr\/share\/debconf/d' $1
+    sed -i '/dpkg-maintscript-helper/d' $1
+    script=$(<$1)
+    script=${script// \/etc/ $DIR\/etc}
+    script=${script// \/usr/ $DIR\/usr}
+    script=${script// \/bin/ $DIR\/bin}
+    script=${script// \/var/ $DIR\/var}
+    script=${script// \/opt/ $DIR\/opt}
+    script=${script// \/lib/ $DIR\/lib}
+    script=${script// \/mnt/ $DIR\/mnt}
+    script=${script// \/boot/ $DIR\/boot}
+    script=${script// \/sbim/ $DIR\/sbin}
+    printf "%s" "$script" > "$1"
+}
+
 case $1 in
     search)
         if [ "$MODE" = "apt" ]; then
@@ -67,9 +84,24 @@ case $1 in
                     echo ""
                 fi
                 apt-get download $package
-                cd .. &&
-                for deb in deb/*.deb; do
-                    dpkg -x $deb . 
+                for deb in ./*.deb; do
+                    rm -rf package_extracted &&
+                    mkdir package_extracted &&
+                    cd package_extracted
+                    ar -x ../$deb &&
+                    tar -xzf control.tar.gz &&
+                    if [ -x preinst ]; then
+                        fix_script preinst install &&
+                        ./preinst
+                    fi
+                    cd ..
+                    dpkg -x $deb ../..
+                    cd package_extracted
+                    if [ -x postinst ]; then
+                        fix_script postinst configure &&
+                        ./postinst
+                    fi
+                    cd ..
                 done
             fi
             if [ "$MODE" = "yum" ]; then
